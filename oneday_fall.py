@@ -23,12 +23,12 @@ def fetch_data(symbols, start_date, end_date):
             st.error(f"Error fetching data for {symbol}: {e}")
     return data
 
-
 # Function to analyze significant falls and their aftermath
 def analyze_falls(data, days_after):
     results = []
     for symbol, df in data.items():
         df['Fall%'] = df['Close'].pct_change() * 100
+        df = df.dropna(subset=['Close', 'Fall%'])  # Drop rows with NaN values in relevant columns
         falls = df[df['Fall%'] <= -5]
         for index, row in falls.iterrows():
             after_fall_df = df.loc[index:].copy()
@@ -42,11 +42,14 @@ def analyze_falls(data, days_after):
             max_days_below_fall = 0
             count_below_fall = 0
             for close in after_fall_df['Close']:
-                if close < row['Close']:
-                    count_below_fall += 1
-                else:
-                    count_below_fall = 0
-                max_days_below_fall = max(max_days_below_fall, count_below_fall)
+                try:
+                    if close < row['Close']:
+                        count_below_fall += 1
+                    else:
+                        count_below_fall = 0
+                    max_days_below_fall = max(max_days_below_fall, count_below_fall)
+                except TypeError as e:
+                    st.error(f"TypeError in comparison for {symbol} on {index}: {e}")
 
             percent_below_fall = ((after_fall_df['Close'].min() - row['Close']) / row['Close']) * 100
             
@@ -75,7 +78,6 @@ def calculate_max_fall(data):
     results = []
     for symbol, df in data.items():
         df['Fall%'] = df['Close'].pct_change() * 100
-        
         max_fall_start_date = df['Close'].idxmax()
         max_fall_start_open = df['Open'].loc[max_fall_start_date]
         max_fall_period = df[df['Close'] < max_fall_start_open]
@@ -165,19 +167,20 @@ days_after = st.slider("Select days after fall for analysis", min_value=1, max_v
 fall_analysis_2023 = analyze_falls(data_2023, days_after)
 
 # Calculate frequency of falls for 2023
-fall_frequency_2023 = fall_analysis_2023['Symbol'].value_counts().reset_index()
-fall_frequency_2023.columns = ['Symbol', 'Frequency']
-st.write(fall_frequency_2023)
+if not fall_analysis_2023.empty:
+    fall_frequency_2023 = fall_analysis_2023['Symbol'].value_counts().reset_index()
+    fall_frequency_2023.columns = ['Symbol', 'Frequency']
+    st.write(fall_frequency_2023)
 
-st.subheader('Detailed Analysis of Falls and Aftermath for 2023')
-st.write(fall_analysis_2023)
+    st.subheader('Detailed Analysis of Falls and Aftermath for 2023')
+    st.write(fall_analysis_2023)
 
-# Plot stock performance for selected stock
-st.subheader('Stock Performance After Significant Falls for 2023')
-selected_stock_2023 = st.selectbox('Select a Stock', fall_frequency_2023['Symbol'].unique(), key='stock_2023')
-range_after_2023 = st.slider("Select range of days to display after the fall", min_value=5, max_value=60, value=30, key='range_2023')
-selected_fall_dates_2023 = fall_analysis_2023[fall_analysis_2023['Symbol'] == selected_stock_2023]['Date']
-plot_stock_performance(data_2023, selected_stock_2023, selected_fall_dates_2023, range_after_2023)
+    # Plot stock performance for selected stock
+    st.subheader('Stock Performance After Significant Falls for 2023')
+    selected_stock_2023 = st.selectbox('Select a Stock', fall_frequency_2023['Symbol'].unique(), key='stock_2023')
+    range_after_2023 = st.slider("Select range of days to display after the fall", min_value=5, max_value=60, value=30, key='range_2023')
+    selected_fall_dates_2023 = fall_analysis_2023[fall_analysis_2023['Symbol'] == selected_stock_2023]['Date']
+    plot_stock_performance(data_2023, selected_stock_2023, selected_fall_dates_2023, range_after_2023)
 
 # Select year for maximum fall analysis
 year = st.selectbox("Select year for maximum fall analysis", [2021, 2022, 2023])
@@ -194,8 +197,11 @@ st.subheader(f'Maximum Fall Analysis for {year}')
 st.write(max_fall_analysis)
 
 # Plot stock performance for selected stock in maximum fall analysis
-st.subheader(f'Stock Performance for Maximum Fall in {year}')
-selected_stock_max_fall = st.selectbox('Select a Stock', max_fall_analysis['Symbol'].unique(), key='stock_max_fall')
-range_after_max_fall = st.slider("Select range of days to display after the fall", min_value=5, max_value=60, value=30, key='range_max_fall')
-selected_fall_dates_max_fall = max_fall_analysis[max_fall_analysis['Symbol'] == selected_stock_max_fall][['Max Fall Start Date', 'Max Fall End Date']]
-plot_stock_performance(data, selected_stock_max_fall, selected_fall_dates_max_fall.values.flatten(), range_after_max_fall)
+if not max_fall_analysis.empty:
+    st.subheader(f'Stock Performance for Maximum Fall in {year}')
+    selected_stock_max_fall = st.selectbox('Select a Stock', max_fall_analysis['Symbol'].unique(), key='stock_max_fall')
+    range_after_max_fall = st.slider("Select range of days to display after the fall", min_value=5, max_value=60, value=30, key='range_max_fall')
+    selected_fall_dates_max_fall = max_fall_analysis[max_fall_analysis['Symbol'] == selected_stock_max_fall][['Max Fall Start Date', 'Max Fall End Date']]
+    plot_stock_performance(data, selected_stock_max_fall, selected_fall_dates_max_fall.values.flatten(), range_after_max_fall)
+else:
+    st.warning("No data available for maximum fall analysis.")
