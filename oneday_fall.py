@@ -19,7 +19,7 @@ def fetch_data(symbols, start_date, end_date):
             if not stock_data.empty:
                 data[symbol] = stock_data
             else:
-                st.warning(f"No data found for {symbol}.")
+                st.warning(f"No data found for {symbol}. Skipping.")
         except Exception as e:
             st.error(f"Error fetching data for {symbol}: {e}")
     return data
@@ -35,7 +35,11 @@ def analyze_falls(data, days_after):
 
         try:
             df['Fall%'] = df['Close'].pct_change() * 100
-            df = df.dropna(subset=['Close', 'Fall%'])  # Drop rows with NaN values in relevant columns
+            if 'Fall%' not in df.columns or df.empty:
+                st.warning(f"Invalid or empty data for {symbol}. Skipping.")
+                continue
+
+            df = df.dropna(subset=['Close', 'Fall%'])  # Drop rows with NaN values
             falls = df[df['Fall%'] <= -5]
 
             for index, row in falls.iterrows():
@@ -80,54 +84,6 @@ def analyze_falls(data, days_after):
             st.error(f"Error processing data for {symbol}: {e}")
     return pd.DataFrame(results)
 
-# Function to calculate maximum fall and other metrics
-def calculate_max_fall(data):
-    results = []
-    for symbol, df in data.items():
-        if df.empty:
-            st.warning(f"No data available for {symbol}. Skipping.")
-            continue
-
-        try:
-            df['Fall%'] = df['Close'].pct_change() * 100
-            max_fall_start_date = df['Close'].idxmax()
-            max_fall_start_open = df['Open'].loc[max_fall_start_date]
-            max_fall_period = df[df['Close'] < max_fall_start_open]
-            max_fall_end_date = max_fall_period.index[-1] if not max_fall_period.empty else df.index[-1]
-            max_fall_percent = ((df['Close'].loc[max_fall_end_date] - max_fall_start_open) / max_fall_start_open) * 100
-            max_fall_start_price = df['Close'].loc[max_fall_start_date]
-            max_fall_end_price = df['Close'].loc[max_fall_end_date]
-            
-            # Determine red and green candles in the max fall period
-            max_fall_period = df.loc[max_fall_start_date:max_fall_end_date]
-            red_candles = (max_fall_period['Close'] < max_fall_period['Open']).sum()
-            green_candles = (max_fall_period['Close'] > max_fall_period['Open']).sum()
-
-            # Determine maximum number of back-to-back red candles
-            max_red_streak = 0
-            current_red_streak = 0
-            for close, open_ in zip(max_fall_period['Close'], max_fall_period['Open']):
-                if close < open_:
-                    current_red_streak += 1 
-                    max_red_streak = max(max_red_streak, current_red_streak)
-                else:
-                    current_red_streak = 0
-
-            results.append({
-                'Symbol': symbol,
-                'Max Fall%': max_fall_percent,
-                'Max Fall Start Date': max_fall_start_date,
-                'Max Fall Start Price': max_fall_start_price,
-                'Max Fall End Date': max_fall_end_date,
-                'Max Fall End Price': max_fall_end_price,
-                'Red Candles': red_candles,
-                'Green Candles': green_candles,
-                'Max Red Candles': max_red_streak
-            })
-        except Exception as e:
-            st.error(f"Error processing max fall data for {symbol}: {e}")
-    return pd.DataFrame(results)
-
 # Streamlit dashboard
 st.title('Nifty 50 Stocks Analysis')
 st.subheader('Stocks with Falls Greater than 5% in a Day for the Year 2023')
@@ -146,20 +102,3 @@ if not fall_analysis_2023.empty:
     st.write(fall_analysis_2023)
 else:
     st.warning("No significant falls were found in the data.")
-
-# Select year for maximum fall analysis
-year = st.selectbox("Select year for maximum fall analysis", [2021, 2022, 2023])
-
-# Fetch historical data for the selected year
-start_date = f"{year}-01-01"
-end_date = f"{year}-12-31"
-data = fetch_data(nifty_50_symbols, start_date, end_date)
-
-# Calculate maximum fall and other metrics for the selected year
-max_fall_analysis = calculate_max_fall(data)
-
-st.subheader(f'Maximum Fall Analysis for {year}')
-if not max_fall_analysis.empty:
-    st.write(max_fall_analysis)
-else:
-    st.warning(f"No maximum fall data available for {year}.")
